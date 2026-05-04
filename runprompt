@@ -28,6 +28,7 @@ import glob
 import base64
 import mimetypes
 import socket
+import subprocess
 
 # Try to use PyYAML if available, otherwise use minimal parser
 try:
@@ -142,15 +143,27 @@ def get_conf(key, default=None):
 
 
 def get_api_key(provider):
-    """Get API key for provider, checking config cascade then native env var."""
+    """Get API key for provider, checking config cascade then kv cli then native env var."""
     key_name = provider + "_api_key"
     # First check config cascade
     from_conf = get_conf(key_name)
     if from_conf:
         return from_conf
-    # Fall back to native env var (e.g. ANTHROPIC_API_KEY)
     env_var = PROVIDERS.get(provider, {}).get("env")
     if env_var:
+        # Try kv cli tool first
+        try:
+            result = subprocess.run(
+                ["kv", "get", env_var],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                value = result.stdout.strip()
+                if value:
+                    return value
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+        # Fall back to native env var (e.g. ANTHROPIC_API_KEY)
         return os.environ.get(env_var)
     return None
 
